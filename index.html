@@ -154,99 +154,72 @@
 
 
 
-  <!-- AGENTE IA — painel flutuante com iframe Flowise -->
-  <div id="ia-panel" style="
-    display:none;
-    position:fixed;
-    bottom:24px;
-    left:270px;
-    width:380px;
-    height:540px;
-    background:#fff;
-    border-radius:16px;
-    box-shadow:0 12px 40px rgba(0,0,0,.25);
-    z-index:9990;
-    overflow:hidden;
-    flex-direction:column;
-    border:1px solid #e2e6f0;
-    transition:left .2s ease;
-  ">
-    <div style="
-      background:linear-gradient(135deg,#1d4ed8,#6366f1);
-      color:#fff;
-      padding:14px 16px;
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      font-family:'DM Sans',sans-serif;
-      font-weight:600;
-      font-size:.9rem;
-      flex-shrink:0;
-    ">
-      <div style="display:flex;align-items:center;gap:8px">
-        <i class="fas fa-robot"></i>
-        <span>Agente GV&amp;T</span>
-      </div>
-      <button onclick="toggleIA()" style="
-        background:rgba(255,255,255,.2);
-        border:none;
-        color:#fff;
-        border-radius:6px;
-        width:28px;height:28px;
-        cursor:pointer;
-        font-size:.9rem;
-        display:flex;align-items:center;justify-content:center;
-      "><i class="fas fa-times"></i></button>
-    </div>
-    <iframe
-      id="ia-iframe"
-      src=""
-      data-src="https://cloud.flowiseai.com/chatbot/e0364731-8312-41c9-9454-fee9ad657b7d"
-      style="flex:1;border:none;width:100%;height:100%"
-      allow="microphone"
-    ></iframe>
-  </div>
 
+  <!-- AGENTE IA — Flowise embed oficial controlado pelo botão da sidebar -->
   <script>
     (function() {
       var iaOpen = false;
       var iaLoaded = false;
 
+      function loadFlowise() {
+        if (iaLoaded) return;
+        iaLoaded = true;
+
+        var script = document.createElement("script");
+        script.type = "module";
+        script.textContent = [
+          "import Chatbot from "https://cdn.jsdelivr.net/npm/flowise-embed/dist/web.js";",
+          "Chatbot.init({",
+          "  chatflowid: "e0364731-8312-41c9-9454-fee9ad657b7d",",
+          "  apiHost: "https://cloud.flowiseai.com",",
+          "  theme: {",
+          "    button: { backgroundColor: "#1d4ed8", right: 9999, bottom: 9999, size: 0 },",
+          "    chatWindow: {",
+          "      welcomeMessage: "Ol\u00e1! \ud83d\udc4b Como posso ajudar hoje?",",
+          "      backgroundColor: "#ffffff",",
+          "      height: 520,",
+          "      width: 380,",
+          "      fontSize: 14,",
+          "      title: "Agente GV\u0026T",",
+          "      titleColor: "#ffffff",",
+          "      titleBackgroundColor: "#1d4ed8"",
+          "    }",
+          "  }",
+          "});",
+          "window._flowiseChatbot = Chatbot;"
+        ].join("
+");
+        document.body.appendChild(script);
+      }
+
+      function openFlowise() {
+        // Tenta acionar o botão interno do web component
+        var tryClick = function(attempts) {
+          var host = document.querySelector("flowise-chatbot");
+          var btn = host && host.shadowRoot && host.shadowRoot.querySelector("button[part=button], button.chatbot-button, button");
+          if (btn) {
+            btn.click();
+            return;
+          }
+          if (attempts > 0) setTimeout(function(){ tryClick(attempts - 1); }, 200);
+        };
+        tryClick(15);
+      }
+
       window.toggleIA = function() {
-        var panel = document.getElementById("ia-panel");
-        var iframe = document.getElementById("ia-iframe");
-        if (!panel) return;
-
-        iaOpen = !iaOpen;
-        panel.style.display = iaOpen ? "flex" : "none";
-
-        // Carrega o iframe apenas na primeira abertura
-        if (iaOpen && !iaLoaded) {
-          iframe.src = iframe.dataset.src;
-          iaLoaded = true;
+        if (!iaLoaded) {
+          loadFlowise();
+          // Aguarda o componente montar antes de clicar
+          setTimeout(function(){ openFlowise(); }, 1200);
+        } else {
+          openFlowise();
         }
-
-        // Ajusta posição se sidebar estiver recolhida
-        var collapsed = document.body.classList.contains("sidebar-collapsed");
-        panel.style.left = collapsed ? "80px" : "270px";
+        iaOpen = !iaOpen;
       };
 
-      // Ajusta posição quando sidebar é recolhida/expandida
       document.addEventListener("DOMContentLoaded", function() {
         var btn = document.getElementById("ia-toggle-btn");
-        if (btn) btn.addEventListener("click", toggleIA);
-
-        var toggleBtn = document.getElementById("sidebar-toggle");
-        if (toggleBtn) {
-          toggleBtn.addEventListener("click", function() {
-            setTimeout(function() {
-              var panel = document.getElementById("ia-panel");
-              if (!panel || panel.style.display === "none") return;
-              var collapsed = document.body.classList.contains("sidebar-collapsed");
-              panel.style.left = collapsed ? "80px" : "270px";
-            }, 250);
-          });
-        }
+        if (btn) btn.addEventListener("click", window.toggleIA);
       });
     })();
   </script>
