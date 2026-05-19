@@ -444,6 +444,178 @@ async function loadLinks() {
   }
 }
 
+/* ── TREINAMENTOS — CARDS POR TRILHA + MODAL ── */
+
+// Ícones automáticos por palavras-chave no nome da trilha
+function trilhaIcone(nome) {
+  const n = normalize(nome);
+  if (n.includes("gestor") || n.includes("gerente") || n.includes("lider")) return "fas fa-user-tie";
+  if (n.includes("vend") || n.includes("consultor") || n.includes("comercial")) return "fas fa-handshake";
+  if (n.includes("financ") || n.includes("admin") || n.includes("backoffice")) return "fas fa-calculator";
+  if (n.includes("tecni") || n.includes("mecanico") || n.includes("oficina")) return "fas fa-wrench";
+  if (n.includes("atendimento") || n.includes("recepcao") || n.includes("caixa")) return "fas fa-headset";
+  if (n.includes("novo") || n.includes("seminovo") || n.includes("veiculo") || n.includes("carro")) return "fas fa-car";
+  if (n.includes("pos") || n.includes("relacionamento") || n.includes("crm")) return "fas fa-star";
+  if (n.includes("rh") || n.includes("pessoas") || n.includes("dp")) return "fas fa-users";
+  return "fas fa-graduation-cap";
+}
+
+// Cores dos cards (rotaciona automaticamente)
+const TRILHA_CORES = [
+  { bg: "#eff6ff", icon: "#1d4ed8", border: "#bfdbfe" },
+  { bg: "#f0fdf4", icon: "#15803d", border: "#bbf7d0" },
+  { bg: "#faf5ff", icon: "#7c3aed", border: "#e9d5ff" },
+  { bg: "#fff7ed", icon: "#c2410c", border: "#fed7aa" },
+  { bg: "#fef2f2", icon: "#b91c1c", border: "#fecaca" },
+  { bg: "#f0f9ff", icon: "#0369a1", border: "#bae6fd" },
+  { bg: "#fefce8", icon: "#a16207", border: "#fde68a" },
+  { bg: "#f8fafc", icon: "#475569", border: "#cbd5e1" },
+];
+
+async function loadTreinamentos() {
+  const container = document.getElementById("treinamentos-list");
+  if (!container) return;
+
+  const table = await fetchSheet(CONFIG.sheets.treinamentos);
+  if (!table?.rows?.length) {
+    container.innerHTML = `<div class="empty-state"><i class="fas fa-graduation-cap"></i><p>Nenhum treinamento encontrado.</p></div>`;
+    return;
+  }
+
+  const headers = table.cols.map(c => c.label || "");
+  const headNorms = headers.map(normalize);
+
+  // Detecta coluna "Função" (ou variações)
+  const idxFuncao = headNorms.findIndex(h => h.includes("funcao") || h.includes("funcção") || h.includes("cargo") || h.includes("trilha") || h.includes("perfil"));
+
+  if (idxFuncao < 0) {
+    // Fallback: sem coluna de agrupamento → tabela normal
+    renderTable(table, "treinamentos-list", "Treinamentos");
+    return;
+  }
+
+  const validRows = table.rows.filter(r => r.c?.some(c => c?.v));
+
+  // Agrupa por trilha
+  const grupos = {};
+  validRows.forEach(r => {
+    const trilha = String(r.c?.[idxFuncao]?.v || "Outros").trim();
+    if (!grupos[trilha]) grupos[trilha] = [];
+    grupos[trilha].push(r);
+  });
+
+  const trilhas = Object.keys(grupos).sort();
+
+  // Monta os cards
+  const cardsHtml = trilhas.map((trilha, i) => {
+    const cor = TRILHA_CORES[i % TRILHA_CORES.length];
+    const icone = trilhaIcone(trilha);
+    const total = grupos[trilha].length;
+    return `
+      <div class="trilha-card" data-trilha="${escapeHtml(trilha)}" style="--card-bg:${cor.bg};--card-icon:${cor.icon};--card-border:${cor.border}">
+        <div class="trilha-icon-wrap"><i class="${icone}"></i></div>
+        <div class="trilha-info">
+          <div class="trilha-nome">${escapeHtml(trilha)}</div>
+          <div class="trilha-count">${total} treinamento${total !== 1 ? "s" : ""}</div>
+        </div>
+        <i class="fas fa-chevron-right trilha-arrow"></i>
+      </div>`;
+  }).join("");
+
+  container.innerHTML = `
+    <div class="trilhas-header">
+      <span class="table-title">Trilhas de Treinamento</span>
+      <span class="table-count">${trilhas.length} trilha${trilhas.length !== 1 ? "s" : ""}</span>
+    </div>
+    <div class="trilhas-grid">${cardsHtml}</div>`;
+
+  // Guarda dados para o modal
+  container._grupos  = grupos;
+  container._headers = headers;
+  container._idxFuncao = idxFuncao;
+
+  // Eventos dos cards
+  container.querySelectorAll(".trilha-card").forEach(card => {
+    card.addEventListener("click", () => {
+      const trilha = card.dataset.trilha;
+      abrirModalTrilha(trilha, grupos[trilha], headers);
+    });
+  });
+
+  // Cria modal (uma vez)
+  if (!document.getElementById("trilha-modal")) criarModalTrilha();
+}
+
+function criarModalTrilha() {
+  const modal = document.createElement("div");
+  modal.id = "trilha-modal";
+  modal.innerHTML = `
+    <div class="trilha-modal-backdrop"></div>
+    <div class="trilha-modal-box">
+      <div class="trilha-modal-header">
+        <div>
+          <div class="trilha-modal-titulo" id="modal-titulo"></div>
+          <div class="trilha-modal-subtitulo" id="modal-subtitulo"></div>
+        </div>
+        <button class="trilha-modal-close" id="modal-close"><i class="fas fa-times"></i></button>
+      </div>
+      <div class="trilha-modal-search-wrap">
+        <i class="fas fa-search"></i>
+        <input type="search" id="modal-search" placeholder="Buscar treinamento..." />
+      </div>
+      <div class="trilha-modal-body" id="modal-body"></div>
+    </div>`;
+  document.body.appendChild(modal);
+
+  // Fechar
+  modal.querySelector(".trilha-modal-backdrop").addEventListener("click", fecharModalTrilha);
+  modal.querySelector("#modal-close").addEventListener("click", fecharModalTrilha);
+  document.addEventListener("keydown", e => { if (e.key === "Escape") fecharModalTrilha(); });
+
+  // Busca no modal
+  modal.querySelector("#modal-search").addEventListener("input", e => {
+    const q = normalize(e.target.value);
+    modal.querySelectorAll(".modal-row").forEach(row => {
+      row.style.display = !q || normalize(row.textContent).includes(q) ? "" : "none";
+    });
+  });
+}
+
+function abrirModalTrilha(trilha, rows, headers) {
+  const modal = document.getElementById("trilha-modal");
+  if (!modal) return;
+
+  document.getElementById("modal-titulo").textContent = trilha;
+  document.getElementById("modal-subtitulo").textContent = `${rows.length} treinamento${rows.length !== 1 ? "s" : ""}`;
+  document.getElementById("modal-search").value = "";
+
+  // Colunas a exibir (todas exceto a coluna Função)
+  const container = document.getElementById("treinamentos-list");
+  const idxFuncao = container._idxFuncao ?? -1;
+  const colsVisiveis = headers.map((h, i) => ({ h, i })).filter(({ i }) => i !== idxFuncao);
+
+  const headerHtml = colsVisiveis.map(({ h }) => `<th>${escapeHtml(h)}</th>`).join("");
+  const rowsHtml = rows.map(r => {
+    const cells = colsVisiveis.map(({ i }) => `<td>${formatValue(r.c?.[i]?.v ?? "")}</td>`).join("");
+    return `<tr class="modal-row">${cells}</tr>`;
+  }).join("");
+
+  document.getElementById("modal-body").innerHTML = `
+    <table class="data-table">
+      <thead><tr>${headerHtml}</tr></thead>
+      <tbody>${rowsHtml}</tbody>
+    </table>`;
+
+  modal.classList.add("open");
+  document.body.style.overflow = "hidden";
+}
+
+function fecharModalTrilha() {
+  const modal = document.getElementById("trilha-modal");
+  if (modal) modal.classList.remove("open");
+  document.body.style.overflow = "";
+}
+
 /* ── ROTEADOR DE PÁGINAS ── */
 async function loadPageData() {
   showLoading();
@@ -461,7 +633,7 @@ async function loadPageData() {
         await fetchSheet(CONFIG.sheets.downloads).then(t => renderTable(t, "downloads-list", "Downloads"));
         break;
       case "treinamentos":
-        await fetchSheet(CONFIG.sheets.treinamentos).then(t => renderTable(t, "treinamentos-list", "Treinamentos"));
+        await loadTreinamentos();
         break;
       case "equipe":
         await loadEquipe();
