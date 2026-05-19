@@ -56,73 +56,75 @@
 
 
 
-  <!-- AGENTE IA — Flowise embed oficial controlado pelo botão da sidebar -->
-  <script>
-    (function() {
-      var iaOpen = false;
-      var iaLoaded = false;
 
-      function loadFlowise() {
-        if (iaLoaded) return;
-        iaLoaded = true;
+  <!-- AGENTE IA — Flowise com botão nativo reposicionado -->
+  <style>
+    flowise-chatbot::part(button),
+    flowise-chatbot > button,
+    #flowise-chatbot-bubble-button {
+      bottom: 80px !important;
+      left: 14px !important;
+      right: auto !important;
+      width: 36px !important;
+      height: 36px !important;
+      opacity: 0 !important;
+      pointer-events: all !important;
+      z-index: 9998 !important;
+    }
+  </style>
 
-        var script = document.createElement("script");
-        script.type = "module";
-        script.textContent = [
-          "import Chatbot from "https://cdn.jsdelivr.net/npm/flowise-embed/dist/web.js";",
-          "Chatbot.init({",
-          "  chatflowid: "e0364731-8312-41c9-9454-fee9ad657b7d",",
-          "  apiHost: "https://cloud.flowiseai.com",",
-          "  theme: {",
-          "    button: { backgroundColor: "#1d4ed8", right: 9999, bottom: 9999, size: 0 },",
-          "    chatWindow: {",
-          "      welcomeMessage: "Ol\u00e1! \ud83d\udc4b Como posso ajudar hoje?",",
-          "      backgroundColor: "#ffffff",",
-          "      height: 520,",
-          "      width: 380,",
-          "      fontSize: 14,",
-          "      title: "Agente GV\u0026T",",
-          "      titleColor: "#ffffff",",
-          "      titleBackgroundColor: "#1d4ed8"",
-          "    }",
-          "  }",
-          "});",
-          "window._flowiseChatbot = Chatbot;"
-        ].join("
-");
-        document.body.appendChild(script);
-      }
-
-      function openFlowise() {
-        // Tenta acionar o botão interno do web component
-        var tryClick = function(attempts) {
-          var host = document.querySelector("flowise-chatbot");
-          var btn = host && host.shadowRoot && host.shadowRoot.querySelector("button[part=button], button.chatbot-button, button");
-          if (btn) {
-            btn.click();
-            return;
-          }
-          if (attempts > 0) setTimeout(function(){ tryClick(attempts - 1); }, 200);
-        };
-        tryClick(15);
-      }
-
-      window.toggleIA = function() {
-        if (!iaLoaded) {
-          loadFlowise();
-          // Aguarda o componente montar antes de clicar
-          setTimeout(function(){ openFlowise(); }, 1200);
-        } else {
-          openFlowise();
+  <script type="module">
+    import Chatbot from "https://cdn.jsdelivr.net/npm/flowise-embed/dist/web.js";
+    Chatbot.init({
+      chatflowid: "e0364731-8312-41c9-9454-fee9ad657b7d",
+      apiHost: "https://cloud.flowiseai.com",
+      theme: {
+        button: {
+          backgroundColor: "#1d4ed8",
+          right: 9999,
+          bottom: 80,
+          size: 36,
+          iconColor: "#ffffff"
+        },
+        chatWindow: {
+          welcomeMessage: "Ol\u00e1! \ud83d\udc4b Como posso ajudar hoje?",
+          backgroundColor: "#ffffff",
+          height: 520,
+          width: 380,
+          fontSize: 14,
+          title: "Agente GV\u0026T",
+          titleColor: "#ffffff",
+          titleBackgroundColor: "#1d4ed8"
         }
-        iaOpen = !iaOpen;
-      };
+      }
+    });
 
-      document.addEventListener("DOMContentLoaded", function() {
-        var btn = document.getElementById("ia-toggle-btn");
-        if (btn) btn.addEventListener("click", window.toggleIA);
-      });
-    })();
+    window.addEventListener("load", function() {
+      var attempts = 0;
+      var interval = setInterval(function() {
+        attempts++;
+        var host = document.querySelector("flowise-chatbot");
+        if (!host) { if (attempts > 30) clearInterval(interval); return; }
+
+        var shadow = host.shadowRoot;
+        if (!shadow) { if (attempts > 30) clearInterval(interval); return; }
+
+        var btn = shadow.querySelector("button");
+        if (!btn) { if (attempts > 30) clearInterval(interval); return; }
+
+        clearInterval(interval);
+
+        btn.style.cssText = "position:fixed!important;bottom:80px!important;left:14px!important;right:auto!important;opacity:0!important;width:36px!important;height:36px!important;z-index:9998!important;";
+
+        var iaBtn = document.getElementById("ia-toggle-btn");
+        if (iaBtn) {
+          iaBtn.addEventListener("click", function() {
+            btn.click();
+          });
+        }
+
+      }, 200);
+    });
   </script>
 
   <script src="config.js"></script>
