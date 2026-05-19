@@ -546,74 +546,205 @@ async function loadTreinamentos() {
   if (!document.getElementById("trilha-modal")) criarModalTrilha();
 }
 
+/* Estado do modal de player */
+const _modalState = { rows: [], headers: [], idxNome: -1, idxLink: -1, idxFuncao: -1, current: -1 };
+
 function criarModalTrilha() {
   const modal = document.createElement("div");
   modal.id = "trilha-modal";
   modal.innerHTML = `
     <div class="trilha-modal-backdrop"></div>
     <div class="trilha-modal-box">
-      <div class="trilha-modal-header">
-        <div>
+
+      <!-- PAINEL ESQUERDO: lista de treinamentos -->
+      <div class="modal-sidebar">
+        <div class="modal-sidebar-header">
           <div class="trilha-modal-titulo" id="modal-titulo"></div>
           <div class="trilha-modal-subtitulo" id="modal-subtitulo"></div>
+          <div class="trilha-modal-search-wrap">
+            <i class="fas fa-search"></i>
+            <input type="search" id="modal-search" placeholder="Buscar..." />
+          </div>
         </div>
-        <button class="trilha-modal-close" id="modal-close"><i class="fas fa-times"></i></button>
+        <ul class="modal-lista" id="modal-lista"></ul>
       </div>
-      <div class="trilha-modal-search-wrap">
-        <i class="fas fa-search"></i>
-        <input type="search" id="modal-search" placeholder="Buscar treinamento..." />
+
+      <!-- PAINEL DIREITO: player -->
+      <div class="modal-player-wrap">
+        <div class="modal-player-header">
+          <div class="modal-player-titulo" id="player-titulo">Selecione um treinamento</div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <button class="modal-nav-btn" id="player-prev" title="Anterior" disabled>
+              <i class="fas fa-chevron-left"></i>
+            </button>
+            <span class="modal-nav-count" id="player-count"></span>
+            <button class="modal-nav-btn" id="player-next" title="Próximo" disabled>
+              <i class="fas fa-chevron-right"></i>
+            </button>
+            <button class="trilha-modal-close" id="modal-close" title="Fechar">
+              <i class="fas fa-times"></i>
+            </button>
+          </div>
+        </div>
+        <div class="modal-player-body" id="modal-player">
+          <div class="modal-player-placeholder">
+            <i class="fas fa-play-circle"></i>
+            <p>Clique em um treinamento ao lado para começar</p>
+          </div>
+        </div>
       </div>
-      <div class="trilha-modal-body" id="modal-body"></div>
+
     </div>`;
   document.body.appendChild(modal);
 
-  // Fechar
   modal.querySelector(".trilha-modal-backdrop").addEventListener("click", fecharModalTrilha);
   modal.querySelector("#modal-close").addEventListener("click", fecharModalTrilha);
-  document.addEventListener("keydown", e => { if (e.key === "Escape") fecharModalTrilha(); });
+  document.addEventListener("keydown", e => {
+    if (e.key === "Escape") fecharModalTrilha();
+    if (e.key === "ArrowRight" && modal.classList.contains("open")) navegarPlayer(1);
+    if (e.key === "ArrowLeft"  && modal.classList.contains("open")) navegarPlayer(-1);
+  });
 
-  // Busca no modal
   modal.querySelector("#modal-search").addEventListener("input", e => {
     const q = normalize(e.target.value);
-    modal.querySelectorAll(".modal-row").forEach(row => {
-      row.style.display = !q || normalize(row.textContent).includes(q) ? "" : "none";
+    modal.querySelectorAll(".modal-item").forEach(item => {
+      item.style.display = !q || normalize(item.textContent).includes(q) ? "" : "none";
     });
   });
+
+  modal.querySelector("#player-prev").addEventListener("click", () => navegarPlayer(-1));
+  modal.querySelector("#player-next").addEventListener("click", () => navegarPlayer(1));
 }
 
 function abrirModalTrilha(trilha, rows, headers) {
+  if (!document.getElementById("trilha-modal")) criarModalTrilha();
   const modal = document.getElementById("trilha-modal");
-  if (!modal) return;
+
+  const headNorms = headers.map(normalize);
+  const idxFuncao = headNorms.findIndex(h => h.includes("funcao") || h.includes("cargo") || h.includes("trilha") || h.includes("perfil"));
+  const idxNome   = headNorms.findIndex(h => h.includes("nome") || h.includes("titulo") || h.includes("treinamento") || h.includes("descricao"));
+  const idxLink   = headNorms.findIndex(h => h.includes("link") || h.includes("url") || h.includes("arquivo"));
+
+  // Guarda estado
+  _modalState.rows     = rows;
+  _modalState.headers  = headers;
+  _modalState.idxNome  = idxNome;
+  _modalState.idxLink  = idxLink;
+  _modalState.idxFuncao= idxFuncao;
+  _modalState.current  = -1;
 
   document.getElementById("modal-titulo").textContent = trilha;
   document.getElementById("modal-subtitulo").textContent = `${rows.length} treinamento${rows.length !== 1 ? "s" : ""}`;
   document.getElementById("modal-search").value = "";
+  document.getElementById("player-titulo").textContent = "Selecione um treinamento";
+  document.getElementById("player-count").textContent = "";
+  document.getElementById("modal-player").innerHTML = `
+    <div class="modal-player-placeholder">
+      <i class="fas fa-play-circle"></i>
+      <p>Clique em um treinamento ao lado para começar</p>
+    </div>`;
+  document.getElementById("player-prev").disabled = true;
+  document.getElementById("player-next").disabled = true;
 
-  // Colunas a exibir (todas exceto a coluna Função)
-  const container = document.getElementById("treinamentos-list");
-  const idxFuncao = container._idxFuncao ?? -1;
-  const colsVisiveis = headers.map((h, i) => ({ h, i })).filter(({ i }) => i !== idxFuncao);
-
-  const headerHtml = colsVisiveis.map(({ h }) => `<th>${escapeHtml(h)}</th>`).join("");
-  const rowsHtml = rows.map(r => {
-    const cells = colsVisiveis.map(({ i }) => `<td>${formatValue(r.c?.[i]?.v ?? "")}</td>`).join("");
-    return `<tr class="modal-row">${cells}</tr>`;
+  // Monta lista lateral
+  const lista = document.getElementById("modal-lista");
+  lista.innerHTML = rows.map((r, i) => {
+    const nome = idxNome >= 0 ? String(r.c?.[idxNome]?.v || "") : `Treinamento ${i + 1}`;
+    const temLink = idxLink >= 0 && r.c?.[idxLink]?.v;
+    return `
+      <li class="modal-item ${temLink ? "" : "sem-link"}" data-idx="${i}">
+        <span class="modal-item-num">${i + 1}</span>
+        <span class="modal-item-nome">${escapeHtml(nome || `Treinamento ${i + 1}`)}</span>
+        ${temLink ? '<i class="fas fa-play modal-item-play"></i>' : '<i class="fas fa-lock modal-item-play" style="opacity:.3"></i>'}
+      </li>`;
   }).join("");
 
-  document.getElementById("modal-body").innerHTML = `
-    <table class="data-table">
-      <thead><tr>${headerHtml}</tr></thead>
-      <tbody>${rowsHtml}</tbody>
-    </table>`;
+  lista.querySelectorAll(".modal-item[data-idx]").forEach(item => {
+    item.addEventListener("click", () => {
+      const idx = +item.dataset.idx;
+      if (_modalState.rows[idx] && idxLink >= 0 && _modalState.rows[idx].c?.[idxLink]?.v) {
+        abrirPlayer(idx);
+      }
+    });
+  });
 
   modal.classList.add("open");
   document.body.style.overflow = "hidden";
 }
 
+function abrirPlayer(idx) {
+  const { rows, headers, idxNome, idxLink } = _modalState;
+  const row  = rows[idx];
+  const nome = idxNome >= 0 ? String(row.c?.[idxNome]?.v || "") : `Treinamento ${idx + 1}`;
+  const url  = idxLink >= 0 ? String(row.c?.[idxLink]?.v || "").trim() : "";
+
+  _modalState.current = idx;
+
+  // Atualiza item ativo na lista
+  document.querySelectorAll(".modal-item").forEach((el, i) => {
+    el.classList.toggle("ativo", i === idx);
+  });
+
+  // Título e contador
+  document.getElementById("player-titulo").textContent = nome;
+  document.getElementById("player-count").textContent = `${idx + 1} / ${rows.length}`;
+
+  // Botões nav
+  document.getElementById("player-prev").disabled = idx === 0;
+  document.getElementById("player-next").disabled = idx === rows.length - 1;
+
+  // Monta player
+  const playerEl = document.getElementById("modal-player");
+  if (!url) {
+    playerEl.innerHTML = `<div class="modal-player-placeholder"><i class="fas fa-exclamation-circle"></i><p>Link não disponível para este treinamento.</p></div>`;
+    return;
+  }
+
+  // YouTube
+  const ytMatch = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
+  if (ytMatch) {
+    playerEl.innerHTML = `<iframe src="https://www.youtube.com/embed/${ytMatch[1]}?autoplay=1&rel=0" allow="autoplay; fullscreen" allowfullscreen></iframe>`;
+    return;
+  }
+
+  // Google Drive — converte para preview embutido
+  const driveMatch = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+  if (driveMatch) {
+    const id = driveMatch[1];
+    // Tenta como preview do Drive (funciona para PDF, PPT, Docs)
+    playerEl.innerHTML = `<iframe src="https://drive.google.com/file/d/${id}/preview" allow="fullscreen" allowfullscreen></iframe>`;
+    return;
+  }
+
+  // PDF ou PPT via Google Docs Viewer
+  if (/\.(pdf|ppt|pptx|doc|docx|xls|xlsx)(\?|$)/i.test(url)) {
+    playerEl.innerHTML = `<iframe src="https://docs.google.com/viewer?url=${encodeURIComponent(url)}&embedded=true" allowfullscreen></iframe>`;
+    return;
+  }
+
+  // Qualquer outro link — tenta iframe direto
+  playerEl.innerHTML = `<iframe src="${url}" allow="fullscreen" allowfullscreen></iframe>`;
+}
+
+function navegarPlayer(delta) {
+  const { current, rows, idxLink } = _modalState;
+  if (current < 0) return;
+  let next = current + delta;
+  // Pula treinamentos sem link
+  while (next >= 0 && next < rows.length) {
+    if (idxLink >= 0 && rows[next].c?.[idxLink]?.v) { abrirPlayer(next); return; }
+    next += delta;
+  }
+}
+
 function fecharModalTrilha() {
   const modal = document.getElementById("trilha-modal");
-  if (modal) modal.classList.remove("open");
+  if (!modal) return;
+  modal.classList.remove("open");
   document.body.style.overflow = "";
+  // Para vídeo ao fechar
+  const player = document.getElementById("modal-player");
+  if (player) player.innerHTML = `<div class="modal-player-placeholder"><i class="fas fa-play-circle"></i><p>Clique em um treinamento ao lado para começar</p></div>`;
 }
 
 /* ── ROTEADOR DE PÁGINAS ── */
