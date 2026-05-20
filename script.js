@@ -486,15 +486,20 @@ async function loadTreinamentos() {
   const headNorms = headers.map(normalize);
 
   // Detecta coluna "Função" (ou variações)
-  const idxFuncao = headNorms.findIndex(h => h.includes("funcao") || h.includes("funcção") || h.includes("cargo") || h.includes("trilha") || h.includes("perfil"));
+  const idxFuncao = headNorms.findIndex(h =>
+    h.includes("funcao") || h.includes("cargo") || h.includes("trilha") || h.includes("perfil"));
 
   if (idxFuncao < 0) {
-    // Fallback: sem coluna de agrupamento → tabela normal
     renderTable(table, "treinamentos-list", "Treinamentos");
     return;
   }
 
-  const validRows = table.rows.filter(r => r.c?.some(c => c?.v));
+  // Filtra apenas linhas que tenham pelo menos título ou link preenchido (além da função)
+  const validRows = table.rows.filter(r => {
+    if (!r.c?.some(c => c?.v)) return false;
+    // Precisa ter pelo menos um valor além da coluna Função
+    return r.c.some((c, i) => i !== idxFuncao && c?.v);
+  });
 
   // Agrupa por trilha
   const grupos = {};
@@ -621,17 +626,28 @@ function abrirModalTrilha(trilha, rows, headers) {
   const modal = document.getElementById("trilha-modal");
 
   const headNorms = headers.map(normalize);
-  const idxFuncao = headNorms.findIndex(h => h.includes("funcao") || h.includes("cargo") || h.includes("trilha") || h.includes("perfil"));
-  const idxNome   = headNorms.findIndex(h => h.includes("nome") || h.includes("titulo") || h.includes("treinamento") || h.includes("descricao"));
-  const idxLink   = headNorms.findIndex(h => h.includes("link") || h.includes("url") || h.includes("arquivo"));
+  const idxFuncao = headNorms.findIndex(h =>
+    h.includes("funcao") || h.includes("cargo") || h.includes("trilha") || h.includes("perfil"));
+  const idxNome   = headNorms.findIndex(h =>
+    h.includes("titulo") || h.includes("nome") || h.includes("treinamento") ||
+    h.includes("descricao") || h.includes("assunto") || h.includes("modulo"));
+  // Primeira coluna que contenha URL/link — aceita "Assista", "Video", "Link", "Url", "Arquivo", "Material"
+  const idxLink   = headNorms.findIndex(h =>
+    h.includes("assista") || h.includes("video") || h.includes("link") ||
+    h.includes("url") || h.includes("arquivo") || h.includes("material") || h.includes("acesso"));
+
+  // Índice do material de apoio (segunda coluna de link, se houver)
+  const idxMaterial = headNorms.findIndex((h, i) =>
+    i !== idxLink && (h.includes("material") || h.includes("apoio") || h.includes("anexo") || h.includes("pdf")));
 
   // Guarda estado
-  _modalState.rows     = rows;
-  _modalState.headers  = headers;
-  _modalState.idxNome  = idxNome;
-  _modalState.idxLink  = idxLink;
-  _modalState.idxFuncao= idxFuncao;
-  _modalState.current  = -1;
+  _modalState.rows      = rows;
+  _modalState.headers   = headers;
+  _modalState.idxNome   = idxNome;
+  _modalState.idxLink   = idxLink;
+  _modalState.idxMaterial = idxMaterial;
+  _modalState.idxFuncao = idxFuncao;
+  _modalState.current   = -1;
 
   document.getElementById("modal-titulo").textContent = trilha;
   document.getElementById("modal-subtitulo").textContent = `${rows.length} treinamento${rows.length !== 1 ? "s" : ""}`;
@@ -649,23 +665,24 @@ function abrirModalTrilha(trilha, rows, headers) {
   // Monta lista lateral
   const lista = document.getElementById("modal-lista");
   lista.innerHTML = rows.map((r, i) => {
-    const nome = idxNome >= 0 ? String(r.c?.[idxNome]?.v || "") : `Treinamento ${i + 1}`;
-    const temLink = idxLink >= 0 && r.c?.[idxLink]?.v;
+    const nome     = idxNome >= 0     ? String(r.c?.[idxNome]?.v     || "") : `Treinamento ${i + 1}`;
+    const temVideo = idxLink >= 0     && r.c?.[idxLink]?.v;
+    const temMat   = idxMaterial >= 0 && r.c?.[idxMaterial]?.v;
+    const clicavel = temVideo || temMat;
     return `
-      <li class="modal-item ${temLink ? "" : "sem-link"}" data-idx="${i}">
+      <li class="modal-item ${clicavel ? "" : "sem-link"}" data-idx="${i}">
         <span class="modal-item-num">${i + 1}</span>
         <span class="modal-item-nome">${escapeHtml(nome || `Treinamento ${i + 1}`)}</span>
-        ${temLink ? '<i class="fas fa-play modal-item-play"></i>' : '<i class="fas fa-lock modal-item-play" style="opacity:.3"></i>'}
+        <span style="display:flex;gap:4px;flex-shrink:0">
+          ${temVideo ? '<i class="fas fa-play-circle modal-item-play" title="Vídeo"></i>' : ""}
+          ${temMat   ? '<i class="fas fa-file-alt modal-item-play" title="Material de Apoio" style="color:var(--success)"></i>' : ""}
+          ${!clicavel ? '<i class="fas fa-lock modal-item-play" style="opacity:.3"></i>' : ""}
+        </span>
       </li>`;
   }).join("");
 
-  lista.querySelectorAll(".modal-item[data-idx]").forEach(item => {
-    item.addEventListener("click", () => {
-      const idx = +item.dataset.idx;
-      if (_modalState.rows[idx] && idxLink >= 0 && _modalState.rows[idx].c?.[idxLink]?.v) {
-        abrirPlayer(idx);
-      }
-    });
+  lista.querySelectorAll(".modal-item:not(.sem-link)").forEach(item => {
+    item.addEventListener("click", () => abrirPlayer(+item.dataset.idx));
   });
 
   modal.classList.add("open");
@@ -673,10 +690,11 @@ function abrirModalTrilha(trilha, rows, headers) {
 }
 
 function abrirPlayer(idx) {
-  const { rows, headers, idxNome, idxLink } = _modalState;
+  const { rows, headers, idxNome, idxLink, idxMaterial } = _modalState;
   const row  = rows[idx];
   const nome = idxNome >= 0 ? String(row.c?.[idxNome]?.v || "") : `Treinamento ${idx + 1}`;
-  const url  = idxLink >= 0 ? String(row.c?.[idxLink]?.v || "").trim() : "";
+  const url  = idxLink >= 0     ? String(row.c?.[idxLink]?.v     || "").trim() : "";
+  const mat  = idxMaterial >= 0 ? String(row.c?.[idxMaterial]?.v || "").trim() : "";
 
   _modalState.current = idx;
 
@@ -687,43 +705,75 @@ function abrirPlayer(idx) {
 
   // Título e contador
   document.getElementById("player-titulo").textContent = nome;
-  document.getElementById("player-count").textContent = `${idx + 1} / ${rows.length}`;
+  document.getElementById("player-count").textContent  = `${idx + 1} / ${rows.length}`;
 
   // Botões nav
   document.getElementById("player-prev").disabled = idx === 0;
   document.getElementById("player-next").disabled = idx === rows.length - 1;
 
-  // Monta player
   const playerEl = document.getElementById("modal-player");
-  if (!url) {
-    playerEl.innerHTML = `<div class="modal-player-placeholder"><i class="fas fa-exclamation-circle"></i><p>Link não disponível para este treinamento.</p></div>`;
+
+  // Sem conteúdo
+  if (!url && !mat) {
+    playerEl.innerHTML = `<div class="modal-player-placeholder"><i class="fas fa-exclamation-circle"></i><p>Nenhum conteúdo disponível para este treinamento.</p></div>`;
     return;
   }
 
-  // YouTube
-  const ytMatch = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
-  if (ytMatch) {
-    playerEl.innerHTML = `<iframe src="https://www.youtube.com/embed/${ytMatch[1]}?autoplay=1&rel=0" allow="autoplay; fullscreen" allowfullscreen></iframe>`;
+  // Resolve URL do Drive (remove parâmetros extras e converte para /preview)
+  function drivePreview(rawUrl) {
+    const m = rawUrl.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+    return m ? `https://drive.google.com/file/d/${m[1]}/preview` : null;
+  }
+
+  // Resolve YouTube
+  function youtubeEmbed(rawUrl) {
+    const m = rawUrl.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
+    return m ? `https://www.youtube.com/embed/${m[1]}?autoplay=1&rel=0` : null;
+  }
+
+  function buildIframe(src) {
+    return `<iframe src="${src}" allow="autoplay; fullscreen" allowfullscreen></iframe>`;
+  }
+
+  // Botão de material de apoio (sempre visível quando existir)
+  const matBtn = mat ? `
+    <div style="position:absolute;bottom:14px;right:14px;z-index:10">
+      <a href="${mat}" target="_blank" rel="noopener noreferrer"
+        style="display:flex;align-items:center;gap:7px;background:#1d4ed8;color:#fff;
+               padding:8px 14px;border-radius:8px;font-size:.8rem;font-weight:600;
+               text-decoration:none;box-shadow:0 4px 12px rgba(0,0,0,.25)">
+        <i class="fas fa-file-download"></i> Material de Apoio
+      </a>
+    </div>` : "";
+
+  // Tenta vídeo primeiro
+  if (url) {
+    const yt = youtubeEmbed(url);
+    if (yt) { playerEl.innerHTML = `<div style="position:relative;height:100%">${buildIframe(yt)}${matBtn}</div>`; return; }
+
+    const dp = drivePreview(url);
+    if (dp) { playerEl.innerHTML = `<div style="position:relative;height:100%">${buildIframe(dp)}${matBtn}</div>`; return; }
+
+    // Outro link direto
+    playerEl.innerHTML = `<div style="position:relative;height:100%">${buildIframe(url)}${matBtn}</div>`;
     return;
   }
 
-  // Google Drive — converte para preview embutido
-  const driveMatch = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
-  if (driveMatch) {
-    const id = driveMatch[1];
-    // Tenta como preview do Drive (funciona para PDF, PPT, Docs)
-    playerEl.innerHTML = `<iframe src="https://drive.google.com/file/d/${id}/preview" allow="fullscreen" allowfullscreen></iframe>`;
-    return;
+  // Só tem material — abre preview do material
+  if (mat) {
+    const dp = drivePreview(mat);
+    if (dp) { playerEl.innerHTML = buildIframe(dp); return; }
+    playerEl.innerHTML = `<div class="modal-player-placeholder">
+      <i class="fas fa-file-alt" style="font-size:3rem;opacity:.3"></i>
+      <p>Material de Apoio disponível</p>
+      <a href="${mat}" target="_blank" rel="noopener noreferrer"
+        style="display:flex;align-items:center;gap:7px;background:#1d4ed8;color:#fff;
+               padding:10px 18px;border-radius:8px;font-size:.85rem;font-weight:600;
+               text-decoration:none;margin-top:8px">
+        <i class="fas fa-file-download"></i> Abrir Material
+      </a>
+    </div>`;
   }
-
-  // PDF ou PPT via Google Docs Viewer
-  if (/\.(pdf|ppt|pptx|doc|docx|xls|xlsx)(\?|$)/i.test(url)) {
-    playerEl.innerHTML = `<iframe src="https://docs.google.com/viewer?url=${encodeURIComponent(url)}&embedded=true" allowfullscreen></iframe>`;
-    return;
-  }
-
-  // Qualquer outro link — tenta iframe direto
-  playerEl.innerHTML = `<iframe src="${url}" allow="fullscreen" allowfullscreen></iframe>`;
 }
 
 function navegarPlayer(delta) {
