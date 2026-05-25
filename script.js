@@ -357,7 +357,7 @@ async function loadIndex() {
     const colNorms = table.cols.map(c => normalize(c.label));
     const row = table.rows.find(r => r.c?.some(c => c?.v));
     if (row) {
-      ["comunicados","downloads","treinamentos","equipe"].forEach(key => {
+      ["comunicados","treinamentos","equipe"].forEach(key => {
         const idx = colNorms.findIndex(c => c.includes(key));
         const val = idx >= 0 ? row.c[idx]?.v || "" : "";
         const el = document.getElementById(`fr-${key}`);
@@ -809,9 +809,6 @@ async function loadPageData() {
         break;
       case "comunicados":
         await fetchSheet(CONFIG.sheets.comunicados).then(t => renderTable(t, "comunicados-list", "Comunicados"));
-        break;
-      case "downloads":
-        await fetchSheet(CONFIG.sheets.downloads).then(t => renderTable(t, "downloads-list", "Downloads"));
         break;
       case "treinamentos":
         await loadTreinamentos();
